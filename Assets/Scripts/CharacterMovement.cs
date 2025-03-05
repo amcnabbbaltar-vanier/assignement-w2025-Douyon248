@@ -14,6 +14,9 @@ public class CharacterMovement : MonoBehaviour
     [Header("Jump Settings")]
     [SerializeField] private float jumpForce = 5f;        // Jump force applied to the character
     [SerializeField] private float groundCheckDistance = 1.1f; // Distance to check for ground contact (Raycast)
+    [SerializeField] public bool canDoubleJump = false; // Controlled by power-up
+    public bool hasDoubleJumped = false;
+
 
     // ============================== Modifiable from other scripts ==================
     public float speedMultiplier = 1.0f; // Additional multiplier for character speed ( WINK WINK )
@@ -102,13 +105,18 @@ public class CharacterMovement : MonoBehaviour
         moveX = Input.GetAxis("Horizontal"); // Get horizontal movement input
         moveZ = Input.GetAxis("Vertical");   // Get vertical movement input
 
+        // Reset double jump when the player is grounded
+        if (IsGrounded)
+        {
+            hasDoubleJumped = false;
+        }
+
         // Register a jump request if the player presses the Jump button
         if (Input.GetButtonDown("Jump"))
         {
             jumpRequest = true;
         }
     }
-
     // ============================== Movement Handling ==============================
 
     /// <summary>
@@ -156,11 +164,20 @@ public class CharacterMovement : MonoBehaviour
     /// </summary>
     private void HandleJump()
     {
-        // Apply jump force only if jump was requested and the character is grounded
-        if (jumpRequest && IsGrounded)
+        if (jumpRequest)
         {
-            rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse); // Apply force upwards
-            jumpRequest = false; // Reset jump request after applying jump
+            if (IsGrounded)
+            {
+                rb.velocity = new Vector3(rb.velocity.x, jumpForce, rb.velocity.z);
+                hasDoubleJumped = false; // Reset when landing
+            }
+            else if (canDoubleJump && !hasDoubleJumped)
+            {
+                rb.velocity = new Vector3(rb.velocity.x, jumpForce, rb.velocity.z);
+                hasDoubleJumped = true;
+                // TODO: Play double jump animation and effects
+            }
+            jumpRequest = false;
         }
     }
 

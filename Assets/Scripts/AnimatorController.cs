@@ -19,6 +19,22 @@ public class AnimatorController : MonoBehaviour
     // TODO Fill this in with your animator calls
     void UpdateAnimator()
     {
-        
+        animator.SetFloat("Speed", characterMovement.groundSpeed);
+
+        if (characterMovement.IsGrounded)
+        {
+            animator.SetBool("IsJumping", false);
+        }
+
+        if (characterMovement.hasDoubleJumped)
+        {
+            animator.SetTrigger("DoubleJump");
+        }
+        else
+        {
+            animator.SetBool("IsJumping", true);
+        }
     }
+
+
 }
