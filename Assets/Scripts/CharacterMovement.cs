@@ -168,13 +168,16 @@ public class CharacterMovement : MonoBehaviour
         {
             if (IsGrounded)
             {
+                // Regular jump
                 rb.velocity = new Vector3(rb.velocity.x, jumpForce, rb.velocity.z);
-                hasDoubleJumped = false; // Reset when landing
+                hasDoubleJumped = false; // Reset double jump on ground
             }
             else if (canDoubleJump && !hasDoubleJumped)
             {
+                // Double jump logic
                 rb.velocity = new Vector3(rb.velocity.x, jumpForce, rb.velocity.z);
                 hasDoubleJumped = true;
+
                 // TODO: Play double jump animation and effects
             }
             jumpRequest = false;
