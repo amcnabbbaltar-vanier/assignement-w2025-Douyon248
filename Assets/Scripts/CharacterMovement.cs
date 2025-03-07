@@ -1,195 +1,156 @@
-using UnityEngine;
+using System.Collections;
 using Cinemachine;
+using UnityEngine;
+using UnityEngine.SceneManagement;
 
-[RequireComponent(typeof(Rigidbody))] // Ensures that a Rigidbody component is attached to the GameObject
+[RequireComponent(typeof(Rigidbody))]
 public class CharacterMovement : MonoBehaviour
 {
     // ============================== Movement Settings ==============================
     [Header("Movement Settings")]
-    [SerializeField] private float baseWalkSpeed = 5f;    // Base speed when walking
-    [SerializeField] private float baseRunSpeed = 8f;     // Base speed when running
-    [SerializeField] private float rotationSpeed = 10f;   // Speed at which the character rotates
+    [SerializeField] private float baseWalkSpeed = 5f;
+    [SerializeField] private float baseRunSpeed = 8f;
+    [SerializeField] private float rotationSpeed = 10f;
 
     // ============================== Jump Settings =================================
     [Header("Jump Settings")]
-    [SerializeField] private float jumpForce = 5f;        // Jump force applied to the character
-    [SerializeField] private float groundCheckDistance = 1.1f; // Distance to check for ground contact (Raycast)
-    [SerializeField] public bool canDoubleJump = false; // Controlled by power-up
-    public bool hasDoubleJumped = false;
+    [SerializeField] private float jumpForce = 5f;
+    [SerializeField] private float groundCheckDistance = 1.1f;
+    [SerializeField] public bool canDoubleJump = false;
+    private bool hasDoubleJumped = false;
 
+    // ============================== Health Settings ==============================
+    [Header("Health Settings")]
+    public int maxHealth = 3;
+    private int currentHealth;
 
-    // ============================== Modifiable from other scripts ==================
-    public float speedMultiplier = 1.0f; // Additional multiplier for character speed ( WINK WINK )
+    // ============================== Other Variables ==============================
+    private Rigidbody rb;
+    private Transform cameraTransform;
+    private float moveX;
+    private float moveZ;
+    private bool jumpRequest;
+    private Vector3 moveDirection;
 
-    // ============================== Private Variables ==============================
-    private Rigidbody rb; // Reference to the Rigidbody component
-    private Transform cameraTransform; // Reference to the camera's transform
+    public float speedMultiplier = 1.0f; // For speed power-ups
+    public float groundSpeed; // For animation
 
-    // Input variables
-    private float moveX; // Stores horizontal movement input (A/D or Left/Right Arrow)
-    private float moveZ; // Stores vertical movement input (W/S or Up/Down Arrow)
-    private bool jumpRequest; // Flag to check if the player requested a jump
-    private Vector3 moveDirection; // Stores the calculated movement direction
-
-    // ============================== Animation Variables ==============================
-    [Header("Anim values")]
-    public float groundSpeed; // Speed value used for animations
-
-    // ============================== Character State Properties ==============================
-    /// <summary>
-    /// Checks if the character is currently grounded using a Raycast.
-    /// If false, the character is in the air.
-    /// </summary>
-    public bool IsGrounded => 
+    public bool IsGrounded =>
         Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, groundCheckDistance);
 
-    /// <summary>
-    /// Checks if the player is currently holding the "Run" button.
-    /// </summary>
     private bool IsRunning => Input.GetButton("Run");
 
-    // ============================== Unity Built-in Methods ==============================
+    // Expose the private 'hasDoubleJumped' via a public property
+    public bool HasDoubleJumped
+    {
+        get { return hasDoubleJumped; }
+    }
 
-    /// <summary>
-    /// Called when the script is first initialized.
-    /// </summary>
+    private bool isInTrap = false; // Flag to prevent multiple damage from trap
+
     private void Awake()
     {
-        InitializeComponents(); // Initialize Rigidbody and Camera reference
-    }
+        rb = GetComponent<Rigidbody>();
+        rb.freezeRotation = true;
+        rb.interpolation = RigidbodyInterpolation.Interpolate;
 
-    /// <summary>
-    /// Called every frame, used to register player input.
-    /// </summary>
-    private void Update()
-    {
-        RegisterInput(); // Collect player input
-    }
-
-    /// <summary>
-    /// Called every physics update (FixedUpdate ensures physics stability).
-    /// </summary>
-    private void FixedUpdate()
-    {
-        HandleMovement(); // Process movement and physics-based updates
-    }
-
-    // ============================== Initialization ==============================
-
-    /// <summary>
-    /// Initializes Rigidbody and camera reference.
-    /// Also locks and hides the cursor for better control.
-    /// </summary>
-    private void InitializeComponents()
-    {
-        rb = GetComponent<Rigidbody>(); // Get the Rigidbody component
-        rb.freezeRotation = true; // Prevent Rigidbody from rotating due to physics interactions
-        rb.interpolation = RigidbodyInterpolation.Interpolate; // Smooth physics interpolation
-
-        // Assign the main camera if available
         if (Camera.main)
             cameraTransform = Camera.main.transform;
 
-        // Lock and hide the cursor for better gameplay control
         Cursor.lockState = CursorLockMode.Confined;
         Cursor.visible = false;
     }
 
-    // ============================== Input Handling ==============================
+    private void Start()
+    {
+        currentHealth = maxHealth;
+        UIManager.Instance.UpdateHealth(currentHealth);
+    }
 
-    /// <summary>
-    /// Reads player input values and registers movement/jump requests.
-    /// </summary>
+    private void Update()
+    {
+        RegisterInput();
+
+        // Detect if player falls off the map
+        if (transform.position.y < -10)
+        {
+            TakeDamage(1);
+            Respawn();
+        }
+    }
+
+    private void FixedUpdate()
+    {
+        HandleMovement();
+    }
+
     private void RegisterInput()
     {
-        moveX = Input.GetAxis("Horizontal"); // Get horizontal movement input
-        moveZ = Input.GetAxis("Vertical");   // Get vertical movement input
+        moveX = Input.GetAxis("Horizontal");
+        moveZ = Input.GetAxis("Vertical");
 
-        // Reset double jump when the player is grounded
         if (IsGrounded)
         {
             hasDoubleJumped = false;
         }
 
-        // Register a jump request if the player presses the Jump button
         if (Input.GetButtonDown("Jump"))
         {
             jumpRequest = true;
         }
     }
-    // ============================== Movement Handling ==============================
 
-    /// <summary>
-    /// Handles movement-related logic: calculating direction, jumping, rotating, and moving.
-    /// </summary>
     private void HandleMovement()
     {
-        CalculateMoveDirection(); // Compute the movement direction based on input
-        HandleJump(); // Process jump input
-        RotateCharacter(); // Rotate the character towards the movement direction
-        MoveCharacter(); // Move the character using velocity-based movement
+        CalculateMoveDirection();
+        HandleJump();
+        RotateCharacter();
+        MoveCharacter();
     }
 
-    /// <summary>
-    /// Calculates the movement direction based on player input and camera orientation.
-    /// </summary>
     private void CalculateMoveDirection()
     {
-        // If the camera is not assigned, move based on world space
         if (!cameraTransform)
         {
             moveDirection = new Vector3(moveX, 0, moveZ).normalized;
         }
         else
         {
-            // Get forward and right vectors from the camera perspective
             Vector3 forward = cameraTransform.forward;
             Vector3 right = cameraTransform.right;
 
-            // Ignore Y-axis movement to prevent unwanted tilting
             forward.y = 0f;
             right.y = 0f;
 
-            // Normalize vectors to maintain consistent movement speed
             forward.Normalize();
             right.Normalize();
 
-            // Calculate movement direction relative to the camera orientation
             moveDirection = (forward * moveZ + right * moveX).normalized;
         }
     }
 
-    /// <summary>
-    /// Handles jumping by applying an impulse force if the character is grounded.
-    /// </summary>
     private void HandleJump()
     {
         if (jumpRequest)
         {
             if (IsGrounded)
             {
-                // Regular jump
                 rb.velocity = new Vector3(rb.velocity.x, jumpForce, rb.velocity.z);
-                hasDoubleJumped = false; // Reset double jump on ground
+                hasDoubleJumped = false;
             }
             else if (canDoubleJump && !hasDoubleJumped)
             {
-                // Double jump logic
                 rb.velocity = new Vector3(rb.velocity.x, jumpForce, rb.velocity.z);
                 hasDoubleJumped = true;
 
-                // TODO: Play double jump animation and effects
+                // Play double jump animation or effect (optional)
             }
             jumpRequest = false;
         }
     }
 
-    /// <summary>
-    /// Rotates the character towards the movement direction.
-    /// </summary>
     private void RotateCharacter()
     {
-        // Rotate only if the character is moving
         if (moveDirection.sqrMagnitude > 0.01f)
         {
             Quaternion targetRotation = Quaternion.LookRotation(moveDirection, Vector3.up);
@@ -197,26 +158,101 @@ public class CharacterMovement : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Moves the character using Rigidbody's velocity instead of MovePosition.
-    /// This ensures smooth movement while avoiding physics conflicts.
-    /// </summary>
     private void MoveCharacter()
     {
-        // Determine movement speed (walking or running)
         float speed = IsRunning ? baseRunSpeed : baseWalkSpeed;
-        
-        // Set ground speed value for animation purposes
         groundSpeed = (moveDirection != Vector3.zero) ? speed : 0.0f;
 
-        // Preserve the current Y velocity to maintain gravity effects
         Vector3 newVelocity = new Vector3(
-            moveDirection.x * speed * speedMultiplier, 
-            rb.velocity.y, // Keep the existing Y velocity for jumping & gravity
+            moveDirection.x * speed * speedMultiplier,
+            rb.velocity.y,
             moveDirection.z * speed * speedMultiplier
         );
 
-        // Apply the new velocity directly
         rb.velocity = newVelocity;
+    }
+
+    public void TakeDamage(int damage)
+    {
+        Debug.Log("Damage taken: " + damage); // Log the damage taken
+        currentHealth -= damage;
+        UIManager.Instance.UpdateHealth(currentHealth);
+
+        if (currentHealth <= 0)
+        {
+            Die();
+        }
+    }
+
+    private void Die()
+    {
+        GameManager.Instance.ResetGame();
+    }
+
+    private void Respawn()
+    {
+        transform.position = GameManager.Instance.lastCheckpointPosition;
+        rb.velocity = Vector3.zero;
+    }
+
+    private IEnumerator TrapDamageCoroutine()
+    {
+        while (isInTrap)
+        {
+            TakeDamage(1); // Apply damage every second
+            yield return new WaitForSeconds(1f); // Delay for 1 second between damage applications
+        }
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other.CompareTag("Trap") && !isInTrap)
+        {
+            isInTrap = true; // Mark that the player is in the trap
+            StartCoroutine(TrapDamageCoroutine()); // Start applying damage over time
+        }
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        if (other.CompareTag("Trap"))
+        {
+            isInTrap = false; // Reset the flag when leaving the trap
+        }
+    }
+
+    public void ActivateSpeedBoost(float duration)
+    {
+        StartCoroutine(SpeedBoostCoroutine(duration));
+    }
+
+    public void ActivateJumpBoost(float duration)
+    {
+        StartCoroutine(JumpBoostCoroutine(duration));
+    }
+
+    private IEnumerator SpeedBoostCoroutine(float duration)
+    {
+        speedMultiplier = 1.5f;
+        yield return new WaitForSeconds(duration);
+        speedMultiplier = 1.0f;
+    }
+
+    private IEnumerator JumpBoostCoroutine(float duration)
+    {
+        canDoubleJump = true;
+        yield return new WaitForSeconds(duration);
+        canDoubleJump = false;
+    }
+
+    // Add ResetPosition method to reset the character's position
+    public void ResetPosition()
+    {
+        transform.position = GameManager.Instance.lastCheckpointPosition; // Reset to last checkpoint
+        Rigidbody rb = GetComponent<Rigidbody>();
+        if (rb != null)
+        {
+            rb.velocity = Vector3.zero; // Stop movement immediately
+        }
     }
 }
